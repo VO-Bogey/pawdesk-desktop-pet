@@ -300,8 +300,99 @@ public partial class PetWindow : Window
 
         PetBodyImage.Source = image;
         PetHeadImage.Source = image;
+        ApplyUploadedPetRegions(_settings.CurrentPetImagePath, image.PixelWidth, image.PixelHeight);
         UploadedPet.Visibility = Visibility.Visible;
         DefaultPet.Visibility = Visibility.Collapsed;
+    }
+
+    private void ApplyUploadedPetRegions(string imagePath, int imageWidth, int imageHeight)
+    {
+        var foreground = DetectForegroundBounds(imagePath);
+        if (foreground is null)
+        {
+            PetHeadClip.Rect = new Rect(0, 0, BaseSize, BaseSize * 0.64);
+            PetBodyClip.Rect = new Rect(0, BaseSize * 0.42, BaseSize, BaseSize * 0.58);
+            PetHeadImage.RenderTransformOrigin = new System.Windows.Point(0.5, 0.35);
+            return;
+        }
+
+        var scale = Math.Min(BaseSize / imageWidth, BaseSize / imageHeight);
+        var displayedWidth = imageWidth * scale;
+        var displayedHeight = imageHeight * scale;
+        var offsetX = (BaseSize - displayedWidth) / 2;
+        var offsetY = (BaseSize - displayedHeight) / 2;
+
+        var x = offsetX + foreground.Value.X * scale;
+        var y = offsetY + foreground.Value.Y * scale;
+        var width = foreground.Value.Width * scale;
+        var height = foreground.Value.Height * scale;
+
+        var headHeight = Math.Clamp(height * 0.52, 48, height);
+        var overlap = Math.Clamp(height * 0.16, 12, 34);
+        var headRect = ClampToPetCanvas(new Rect(x, y, width, headHeight + overlap));
+        var bodyRect = ClampToPetCanvas(new Rect(x, y + Math.Max(0, headHeight - overlap), width, height - headHeight + overlap));
+
+        PetHeadClip.Rect = headRect;
+        PetBodyClip.Rect = bodyRect;
+        PetHeadImage.RenderTransformOrigin = new System.Windows.Point(
+            Math.Clamp((headRect.X + headRect.Width / 2) / BaseSize, 0.1, 0.9),
+            Math.Clamp((headRect.Y + headRect.Height * 0.62) / BaseSize, 0.15, 0.85));
+    }
+
+    private static Int32Rect? DetectForegroundBounds(string imagePath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(imagePath);
+            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+            var frame = decoder.Frames[0];
+            var converted = new FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+            var stride = converted.PixelWidth * 4;
+            var pixels = new byte[stride * converted.PixelHeight];
+            converted.CopyPixels(pixels, stride, 0);
+
+            var minX = converted.PixelWidth;
+            var minY = converted.PixelHeight;
+            var maxX = -1;
+            var maxY = -1;
+
+            for (var y = 0; y < converted.PixelHeight; y++)
+            {
+                for (var x = 0; x < converted.PixelWidth; x++)
+                {
+                    var alpha = pixels[y * stride + x * 4 + 3];
+                    if (alpha < 32)
+                    {
+                        continue;
+                    }
+
+                    minX = Math.Min(minX, x);
+                    minY = Math.Min(minY, y);
+                    maxX = Math.Max(maxX, x);
+                    maxY = Math.Max(maxY, y);
+                }
+            }
+
+            if (maxX < minX || maxY < minY)
+            {
+                return null;
+            }
+
+            return new Int32Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Rect ClampToPetCanvas(Rect rect)
+    {
+        var x = Math.Clamp(rect.X, 0, BaseSize);
+        var y = Math.Clamp(rect.Y, 0, BaseSize);
+        var right = Math.Clamp(rect.Right, 0, BaseSize);
+        var bottom = Math.Clamp(rect.Bottom, 0, BaseSize);
+        return new Rect(x, y, Math.Max(1, right - x), Math.Max(1, bottom - y));
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
