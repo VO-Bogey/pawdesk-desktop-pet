@@ -1,0 +1,53 @@
+<Window x:Class="PawDesk.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PawDesk 设置"
+        Width="360"
+        Height="360"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="当前宠物" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock x:Name="ImagePathText"
+                   Grid.Row="1"
+                   Margin="0,8,0,16"
+                   TextWrapping="Wrap"
+                   Foreground="#666"/>
+
+        <Button Grid.Row="2"
+                Content="更换图片"
+                Height="32"
+                Click="ChangeImage_Click"/>
+
+        <StackPanel Grid.Row="3" Margin="0,18,0,0">
+            <TextBlock Text="大小"/>
+            <Slider x:Name="ScaleSlider"
+                    Minimum="0.3"
+                    Maximum="3.0"
+                    TickFrequency="0.1"
+                    IsSnapToTickEnabled="True"
+                    ValueChanged="ScaleSlider_ValueChanged"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Margin="0,18,0,0">
+            <CheckBox x:Name="TopmostCheckBox" Content="始终置顶" Checked="TopmostCheckBox_Changed" Unchecked="TopmostCheckBox_Changed"/>
+            <CheckBox x:Name="AnimationCheckBox" Content="启用动画" Margin="0,8,0,0" Checked="AnimationCheckBox_Changed" Unchecked="AnimationCheckBox_Changed"/>
+            <CheckBox x:Name="StartupCheckBox" Content="开机启动" Margin="0,8,0,0" Checked="StartupCheckBox_Changed" Unchecked="StartupCheckBox_Changed"/>
+        </StackPanel>
+
+        <Button Grid.Row="6"
+                Content="恢复默认设置"
+                Height="32"
+                Click="Reset_Click"/>
+    </Grid>
+</Window>
