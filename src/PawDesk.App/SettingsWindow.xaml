@@ -40,9 +40,20 @@
         </StackPanel>
 
         <StackPanel Grid.Row="4" Margin="0,18,0,0">
-            <CheckBox x:Name="TopmostCheckBox" Content="始终置顶" Checked="TopmostCheckBox_Changed" Unchecked="TopmostCheckBox_Changed"/>
-            <CheckBox x:Name="AnimationCheckBox" Content="启用动画" Margin="0,8,0,0" Checked="AnimationCheckBox_Changed" Unchecked="AnimationCheckBox_Changed"/>
-            <CheckBox x:Name="StartupCheckBox" Content="开机启动" Margin="0,8,0,0" Checked="StartupCheckBox_Changed" Unchecked="StartupCheckBox_Changed"/>
+            <CheckBox x:Name="TopmostCheckBox"
+                      Content="始终置顶"
+                      Checked="TopmostCheckBox_Changed"
+                      Unchecked="TopmostCheckBox_Changed"/>
+            <CheckBox x:Name="AnimationCheckBox"
+                      Content="启用动画"
+                      Margin="0,8,0,0"
+                      Checked="AnimationCheckBox_Changed"
+                      Unchecked="AnimationCheckBox_Changed"/>
+            <CheckBox x:Name="StartupCheckBox"
+                      Content="开机启动"
+                      Margin="0,8,0,0"
+                      Checked="StartupCheckBox_Changed"
+                      Unchecked="StartupCheckBox_Changed"/>
         </StackPanel>
 
         <Button Grid.Row="6"

@@ -5,7 +5,6 @@ using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using PawDesk.App.Models;
 using PawDesk.App.Services;
 
@@ -28,7 +27,6 @@ public partial class PetWindow : Window
     private System.Windows.Point _mouseDownScreenPoint;
     private bool _dragCompleted;
     private bool _isDragMoveActive;
-    private DateTime _lastMouseReactionUtc = DateTime.MinValue;
 
     public PetWindow(
         AppSettings settings,
@@ -44,12 +42,16 @@ public partial class PetWindow : Window
         _petImageService = petImageService;
         _startupService = startupService;
         _openSettings = openSettings;
+
         _swayTimer = new DispatcherTimer();
         _swayTimer.Tick += (_, _) => PlayRandomSway();
-        _mouseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+
+        _mouseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
         _mouseTimer.Tick += (_, _) => CheckMouseReaction();
+
         _randomMoveTimer = new DispatcherTimer();
         _randomMoveTimer.Tick += (_, _) => PlayRandomMove();
+
         ApplySettings();
     }
 
@@ -64,7 +66,7 @@ public partial class PetWindow : Window
         ApplyScale();
         LoadPetImage();
 
-        if (_settings.AnimationEnabled && _settings.IdleBreathingEnabled)
+        if (_settings.AnimationEnabled)
         {
             StartAnimations();
         }
@@ -75,6 +77,18 @@ public partial class PetWindow : Window
         _settings.PetScale = Math.Clamp(_settings.PetScale, MinScale, MaxScale);
         Width = BaseSize * _settings.PetScale;
         Height = BaseSize * _settings.PetScale;
+    }
+
+    private void StartAnimations()
+    {
+        if (_settings.IdleBreathingEnabled)
+        {
+            StartBreathing();
+        }
+
+        ScheduleNextSway();
+        ScheduleNextRandomMove();
+        _mouseTimer.Start();
     }
 
     private void StartBreathing()
@@ -98,18 +112,6 @@ public partial class PetWindow : Window
         PetRoot.BeginStoryboard(storyboard, HandoffBehavior.SnapshotAndReplace, true);
     }
 
-    private void StartAnimations()
-    {
-        if (_settings.IdleBreathingEnabled)
-        {
-            StartBreathing();
-        }
-
-        ScheduleNextSway();
-        ScheduleNextRandomMove();
-        _mouseTimer.Start();
-    }
-
     private static DoubleAnimation CreateBreathingAnimation()
     {
         return new DoubleAnimation
@@ -130,8 +132,12 @@ public partial class PetWindow : Window
         BreathScale.ScaleX = 1;
         BreathScale.ScaleY = 1;
         SwayRotate.Angle = 0;
+        LeanRotate.Angle = 0;
         ReactionTranslate.X = 0;
         ReactionTranslate.Y = 0;
+        HeadRotate.Angle = 0;
+        HeadTranslate.X = 0;
+        HeadTranslate.Y = 0;
         BounceTranslate.Y = 0;
     }
 
@@ -167,9 +173,7 @@ public partial class PetWindow : Window
 
     private void CheckMouseReaction()
     {
-        if (!_settings.AnimationEnabled ||
-            !_settings.MouseReactionEnabled ||
-            DateTime.UtcNow - _lastMouseReactionUtc < TimeSpan.FromSeconds(1))
+        if (!_settings.AnimationEnabled || !_settings.MouseReactionEnabled || _isDragMoveActive)
         {
             return;
         }
@@ -180,35 +184,40 @@ public partial class PetWindow : Window
         var dx = mouse.X - centerX;
         var dy = mouse.Y - centerY;
         var distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance > 120 || distance < 1)
+
+        if (distance > 180 || distance < 1)
         {
+            AnimateMouseReaction(0, 0, 0, 0);
             return;
         }
 
-        _lastMouseReactionUtc = DateTime.UtcNow;
-        var offsetX = dx / distance * 10;
-        var offsetY = dy / distance * 10;
-        AnimateReaction(offsetX, offsetY);
+        var headX = Math.Clamp(dx / distance * 12, -12, 12);
+        var headY = Math.Clamp(dy / distance * 8, -8, 8);
+        var headAngle = Math.Clamp(dx / 180 * 12, -12, 12);
+        var bodyAngle = Math.Clamp(dx / 180 * 4, -4, 4);
+        AnimateMouseReaction(headX, headY, headAngle, bodyAngle);
     }
 
-    private void AnimateReaction(double x, double y)
+    private void AnimateMouseReaction(double headX, double headY, double headAngle, double bodyAngle)
     {
-        var duration = TimeSpan.FromMilliseconds(220);
-        var ease = new SineEase { EasingMode = EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(140);
+        AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.XProperty, headX, duration);
+        AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.YProperty, headY, duration);
+        AnimateTo(HeadRotate, System.Windows.Media.RotateTransform.AngleProperty, headAngle, duration);
 
-        var xAnimation = new DoubleAnimation(0, x, duration)
-        {
-            AutoReverse = true,
-            EasingFunction = ease
-        };
-        var yAnimation = new DoubleAnimation(0, y, duration)
-        {
-            AutoReverse = true,
-            EasingFunction = ease
-        };
+        var imageIsVisible = PetImage.Visibility == Visibility.Visible;
+        AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, imageIsVisible ? bodyAngle : 0, duration);
+        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, imageIsVisible ? headX * 0.35 : 0, duration);
+        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, imageIsVisible ? headY * 0.25 : 0, duration);
+    }
 
-        ReactionTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, xAnimation);
-        ReactionTranslate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, yAnimation);
+    private static void AnimateTo(System.Windows.Media.Animation.Animatable target, DependencyProperty property, double value, TimeSpan duration)
+    {
+        var animation = new DoubleAnimation(value, duration)
+        {
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseOut }
+        };
+        target.BeginAnimation(property, animation, HandoffBehavior.SnapshotAndReplace);
     }
 
     private void PlayRandomMove()
@@ -346,22 +355,27 @@ public partial class PetWindow : Window
         PetImage.ToolTip = "正在生成宠物...";
         DefaultPet.ToolTip = "正在生成宠物...";
 
-        var result = await _petImageService.ImportImageAsync(dialog.FileName);
-
-        IsEnabled = true;
-        Cursor = System.Windows.Input.Cursors.Hand;
-        PetImage.ToolTip = null;
-        DefaultPet.ToolTip = null;
-        if (!result.Success || string.IsNullOrWhiteSpace(result.ProcessedImagePath))
+        try
         {
-            SaveSettings();
-            System.Windows.MessageBox.Show(this, result.ErrorMessage ?? "图片处理失败。", "PawDesk", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
+            var result = await _petImageService.ImportImageAsync(dialog.FileName);
+            if (!result.Success || string.IsNullOrWhiteSpace(result.ProcessedImagePath))
+            {
+                SaveSettings();
+                System.Windows.MessageBox.Show(this, result.ErrorMessage ?? "图片处理失败。", "PawDesk", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
 
-        _settings.CurrentPetImagePath = result.ProcessedImagePath;
-        LoadPetImage();
-        SaveSettings();
+            _settings.CurrentPetImagePath = result.ProcessedImagePath;
+            LoadPetImage();
+            SaveSettings();
+        }
+        finally
+        {
+            IsEnabled = true;
+            Cursor = System.Windows.Input.Cursors.Hand;
+            PetImage.ToolTip = null;
+            DefaultPet.ToolTip = null;
+        }
     }
 
     public void SetScale(double scale)
