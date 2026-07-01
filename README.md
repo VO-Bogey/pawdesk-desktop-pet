@@ -57,6 +57,14 @@ For quick local testing, run the published executable directly instead of downlo
 src\PawDesk.App\bin\Release\net8.0-windows\win-x64\publish\PawDesk.App.exe
 ```
 
+For testing on another Windows machine, run this in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -NoProfile -Command "iwr https://raw.githubusercontent.com/VO-Bogey/pawdesk-desktop-pet/main/scripts/run-latest.ps1 -UseBasicParsing | iex"
+```
+
+It downloads the latest GitHub Release exe to `%LOCALAPPDATA%\PawDeskTest` and starts it.
+
 The app stores user data in:
 
 ```text
