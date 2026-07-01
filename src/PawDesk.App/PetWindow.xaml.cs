@@ -445,6 +445,14 @@ public partial class PetWindow : Window
         var theta = angleDegrees * Math.PI / 180.0;
         var sigmaX = Math.Clamp(bounds.Width * 0.24, 22, 46);
         var sigmaY = Math.Clamp(bounds.Height * 0.22, 20, 42);
+        var turn = Math.Clamp(pullX / 16.0, -1.0, 1.0);
+        var tilt = Math.Clamp(pullY / 12.0, -1.0, 1.0);
+        var neckX = _uploadedHeadCenter.X;
+        var neckY = bounds.Y + bounds.Height * 0.58;
+        var muzzleX = _uploadedHeadCenter.X + turn * bounds.Width * 0.12;
+        var muzzleY = _uploadedHeadCenter.Y + bounds.Height * 0.08;
+        var muzzleSigmaX = Math.Clamp(bounds.Width * 0.15, 14, 30);
+        var muzzleSigmaY = Math.Clamp(bounds.Height * 0.13, 12, 26);
 
         for (var y = 0; y < size; y++)
         {
@@ -455,14 +463,32 @@ public partial class PetWindow : Window
                 var radial = Math.Exp(-((dx * dx) / (2 * sigmaX * sigmaX) + (dy * dy) / (2 * sigmaY * sigmaY)));
                 var lowerBodyLock = 1.0 - Math.Clamp((y - (bounds.Y + bounds.Height * 0.48)) / Math.Max(1.0, bounds.Height * 0.34), 0, 1);
                 lowerBodyLock = lowerBodyLock * lowerBodyLock;
-                var weight = Math.Clamp(radial * lowerBodyLock, 0, 1);
+                var headWeight = Math.Clamp(radial * lowerBodyLock, 0, 1);
 
-                var localPullX = pullX * 1.35;
-                var localPullY = pullY * 1.15;
-                var rotX = -dy * theta * 0.72 * weight;
-                var rotY = dx * theta * 0.45 * weight;
-                var sourceX = x - localPullX * weight - rotX;
-                var sourceY = y - localPullY * weight - rotY;
+                var mdx = x - muzzleX;
+                var mdy = y - muzzleY;
+                var muzzleWeight = Math.Exp(-((mdx * mdx) / (2 * muzzleSigmaX * muzzleSigmaX) + (mdy * mdy) / (2 * muzzleSigmaY * muzzleSigmaY))) * lowerBodyLock;
+
+                var relativeX = dx / Math.Max(1.0, sigmaX);
+                var nearSide = Math.Clamp(0.5 + relativeX * Math.Sign(turn == 0 ? 1 : turn) * 0.5, 0, 1);
+                var farSide = 1.0 - nearSide;
+
+                var localPullX = pullX * (0.70 * headWeight + 0.95 * muzzleWeight);
+                var localPullY = pullY * (0.50 * headWeight + 0.65 * muzzleWeight);
+
+                var neckDx = x - neckX;
+                var neckDy = y - neckY;
+                var swingX = -neckDy * theta * 0.92 * headWeight;
+                var swingY = neckDx * theta * 0.34 * headWeight;
+
+                // Fake perspective: the near cheek expands, far cheek compresses, and muzzle leads the turn.
+                var perspectiveX = turn * headWeight * (nearSide * 4.5 - farSide * 2.2);
+                var perspectiveY = -Math.Abs(turn) * headWeight * Math.Abs(relativeX) * 1.4;
+                var muzzlePopX = turn * muzzleWeight * 6.5;
+                var muzzlePopY = tilt * muzzleWeight * 2.5;
+
+                var sourceX = x - localPullX - swingX - perspectiveX - muzzlePopX;
+                var sourceY = y - localPullY - swingY - perspectiveY - muzzlePopY;
                 SampleBgra(_uploadedBasePixels, output, size, size, stride, x, y, sourceX, sourceY);
             }
         }
