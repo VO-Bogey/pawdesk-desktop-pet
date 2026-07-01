@@ -333,7 +333,7 @@ public partial class PetWindow : Window
         _uploadedBaseBitmap.Freeze();
         _uploadedBasePixels = pixels;
         _uploadedForegroundBounds = DetectForegroundBounds(pixels, (int)BaseSize, (int)BaseSize, stride);
-        _uploadedHeadCenter = EstimateHeadCenter(_uploadedForegroundBounds);
+        _uploadedHeadCenter = EstimateHeadCenter(pixels, (int)BaseSize, (int)BaseSize, stride, _uploadedForegroundBounds);
     }
 
     private static Int32Rect? DetectForegroundBounds(byte[] pixels, int width, int height, int stride)
@@ -365,7 +365,7 @@ public partial class PetWindow : Window
             : new Int32Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
-    private static System.Windows.Point EstimateHeadCenter(Int32Rect? bounds)
+    private static System.Windows.Point EstimateHeadCenter(byte[] pixels, int width, int height, int stride, Int32Rect? bounds)
     {
         if (bounds is null)
         {
@@ -373,9 +373,56 @@ public partial class PetWindow : Window
         }
 
         var rect = bounds.Value;
+        var topLimit = rect.Y + (int)Math.Round(rect.Height * 0.55);
+        var centerX = rect.X + rect.Width / 2.0;
+        var leftWeight = 0.0;
+        var rightWeight = 0.0;
+        var weightedX = 0.0;
+        var weightedY = 0.0;
+        var total = 0.0;
+
+        for (var y = rect.Y; y < Math.Min(height, topLimit); y++)
+        {
+            var verticalBias = 1.0 - Math.Clamp((y - rect.Y) / Math.Max(1.0, rect.Height * 0.55), 0, 1);
+            verticalBias = 0.35 + verticalBias * verticalBias;
+
+            for (var x = rect.X; x < Math.Min(width, rect.X + rect.Width); x++)
+            {
+                var alpha = pixels[y * stride + x * 4 + 3];
+                if (alpha < 48)
+                {
+                    continue;
+                }
+
+                var sideBias = Math.Abs(x - centerX) / Math.Max(1.0, rect.Width / 2.0);
+                var weight = alpha / 255.0 * verticalBias * (0.55 + sideBias * 0.65);
+                weightedX += x * weight;
+                weightedY += y * weight;
+                total += weight;
+
+                if (x < centerX)
+                {
+                    leftWeight += weight;
+                }
+                else
+                {
+                    rightWeight += weight;
+                }
+            }
+        }
+
+        if (total <= 0.001)
+        {
+            return new System.Windows.Point(rect.X + rect.Width * 0.52, rect.Y + rect.Height * 0.28);
+        }
+
+        var estimatedX = weightedX / total;
+        var estimatedY = weightedY / total;
+        var sideNudge = (rightWeight >= leftWeight ? 1 : -1) * rect.Width * 0.12;
+
         return new System.Windows.Point(
-            rect.X + rect.Width * 0.52,
-            rect.Y + rect.Height * 0.28);
+            Math.Clamp(estimatedX + sideNudge, rect.X + rect.Width * 0.15, rect.X + rect.Width * 0.85),
+            Math.Clamp(estimatedY, rect.Y + rect.Height * 0.10, rect.Y + rect.Height * 0.45));
     }
 
     private void ApplyUploadedWarp(double pullX, double pullY, double angleDegrees)
@@ -395,27 +442,27 @@ public partial class PetWindow : Window
         const int stride = size * 4;
         var output = new byte[_uploadedBasePixels.Length];
         var bounds = _uploadedForegroundBounds ?? new Int32Rect(0, 0, size, size);
-        var top = bounds.Y;
-        var bottom = Math.Max(bounds.Y + bounds.Height, top + 1);
         var theta = angleDegrees * Math.PI / 180.0;
-        var sigma = Math.Max(36.0, bounds.Width * 0.55);
+        var sigmaX = Math.Clamp(bounds.Width * 0.24, 22, 46);
+        var sigmaY = Math.Clamp(bounds.Height * 0.22, 20, 42);
 
         for (var y = 0; y < size; y++)
         {
-            var vertical = 1.0 - Math.Clamp((y - top) / (double)(bottom - top), 0, 1);
-            vertical = Math.Pow(vertical, 1.75);
-
             for (var x = 0; x < size; x++)
             {
                 var dx = x - _uploadedHeadCenter.X;
                 var dy = y - _uploadedHeadCenter.Y;
-                var radial = Math.Exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
-                var weight = Math.Clamp(vertical * (0.30 + 0.70 * radial), 0, 1);
+                var radial = Math.Exp(-((dx * dx) / (2 * sigmaX * sigmaX) + (dy * dy) / (2 * sigmaY * sigmaY)));
+                var lowerBodyLock = 1.0 - Math.Clamp((y - (bounds.Y + bounds.Height * 0.48)) / Math.Max(1.0, bounds.Height * 0.34), 0, 1);
+                lowerBodyLock = lowerBodyLock * lowerBodyLock;
+                var weight = Math.Clamp(radial * lowerBodyLock, 0, 1);
 
-                var rotX = -dy * theta * 0.50 * weight;
-                var rotY = dx * theta * 0.32 * weight;
-                var sourceX = x - pullX * weight - rotX;
-                var sourceY = y - pullY * weight - rotY;
+                var localPullX = pullX * 1.35;
+                var localPullY = pullY * 1.15;
+                var rotX = -dy * theta * 0.72 * weight;
+                var rotY = dx * theta * 0.45 * weight;
+                var sourceX = x - localPullX * weight - rotX;
+                var sourceY = y - localPullY * weight - rotY;
                 SampleBgra(_uploadedBasePixels, output, size, size, stride, x, y, sourceX, sourceY);
             }
         }
