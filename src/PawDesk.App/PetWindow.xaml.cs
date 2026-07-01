@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -25,6 +26,10 @@ public partial class PetWindow : Window
     private readonly DispatcherTimer _randomMoveTimer;
     private readonly Random _random = new();
     private System.Windows.Point _mouseDownScreenPoint;
+    private BitmapSource? _uploadedBaseBitmap;
+    private byte[]? _uploadedBasePixels;
+    private Int32Rect? _uploadedForegroundBounds;
+    private System.Windows.Point _uploadedHeadCenter = new(BaseSize / 2, BaseSize * 0.32);
     private bool _dragCompleted;
     private bool _isDragMoveActive;
 
@@ -139,6 +144,10 @@ public partial class PetWindow : Window
         HeadTranslate.X = 0;
         HeadTranslate.Y = 0;
         BounceTranslate.Y = 0;
+        if (_uploadedBaseBitmap is not null)
+        {
+            PetImage.Source = _uploadedBaseBitmap;
+        }
     }
 
     private void ScheduleNextSway()
@@ -201,11 +210,22 @@ public partial class PetWindow : Window
     private void AnimateMouseReaction(double headX, double headY, double headAngle, double bodyAngle)
     {
         var duration = TimeSpan.FromMilliseconds(140);
+        var imageIsVisible = PetImage.Visibility == Visibility.Visible;
+        if (imageIsVisible)
+        {
+            AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
+            AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
+            AnimateTo(HeadRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
+            AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
+            AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
+            AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
+            ApplyUploadedWarp(headX, headY * 0.7, headAngle);
+            return;
+        }
+
         AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.XProperty, headX, duration);
         AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.YProperty, headY, duration);
         AnimateTo(HeadRotate, System.Windows.Media.RotateTransform.AngleProperty, headAngle, duration);
-
-        var imageIsVisible = PetImage.Visibility == Visibility.Visible;
         AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, imageIsVisible ? bodyAngle : 0, duration);
         AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, imageIsVisible ? headX * 0.35 : 0, duration);
         AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, imageIsVisible ? headY * 0.25 : 0, duration);
@@ -265,6 +285,9 @@ public partial class PetWindow : Window
             !File.Exists(_settings.CurrentPetImagePath))
         {
             PetImage.Source = null;
+            _uploadedBaseBitmap = null;
+            _uploadedBasePixels = null;
+            _uploadedForegroundBounds = null;
             PetImage.Visibility = Visibility.Collapsed;
             DefaultPet.Visibility = Visibility.Visible;
             return;
@@ -277,9 +300,156 @@ public partial class PetWindow : Window
         image.EndInit();
         image.Freeze();
 
-        PetImage.Source = image;
+        PrepareUploadedWarpSource(image);
+        PetImage.Source = _uploadedBaseBitmap ?? image;
         PetImage.Visibility = Visibility.Visible;
         DefaultPet.Visibility = Visibility.Collapsed;
+    }
+
+    private void PrepareUploadedWarpSource(BitmapSource source)
+    {
+        var visual = new DrawingVisual();
+        using (var context = visual.RenderOpen())
+        {
+            var scale = Math.Min(BaseSize / source.PixelWidth, BaseSize / source.PixelHeight);
+            var width = source.PixelWidth * scale;
+            var height = source.PixelHeight * scale;
+            var x = (BaseSize - width) / 2;
+            var y = (BaseSize - height) / 2;
+            context.DrawRectangle(System.Windows.Media.Brushes.Transparent, null, new Rect(0, 0, BaseSize, BaseSize));
+            context.DrawImage(source, new Rect(x, y, width, height));
+        }
+
+        var render = new RenderTargetBitmap((int)BaseSize, (int)BaseSize, 96, 96, PixelFormats.Pbgra32);
+        render.Render(visual);
+        var converted = new FormatConvertedBitmap(render, PixelFormats.Bgra32, null, 0);
+        converted.Freeze();
+
+        var stride = (int)BaseSize * 4;
+        var pixels = new byte[stride * (int)BaseSize];
+        converted.CopyPixels(pixels, stride, 0);
+
+        _uploadedBaseBitmap = BitmapSource.Create((int)BaseSize, (int)BaseSize, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+        _uploadedBaseBitmap.Freeze();
+        _uploadedBasePixels = pixels;
+        _uploadedForegroundBounds = DetectForegroundBounds(pixels, (int)BaseSize, (int)BaseSize, stride);
+        _uploadedHeadCenter = EstimateHeadCenter(_uploadedForegroundBounds);
+    }
+
+    private static Int32Rect? DetectForegroundBounds(byte[] pixels, int width, int height, int stride)
+    {
+        var minX = width;
+        var minY = height;
+        var maxX = -1;
+        var maxY = -1;
+
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var alpha = pixels[y * stride + x * 4 + 3];
+                if (alpha < 32)
+                {
+                    continue;
+                }
+
+                minX = Math.Min(minX, x);
+                minY = Math.Min(minY, y);
+                maxX = Math.Max(maxX, x);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+
+        return maxX < minX || maxY < minY
+            ? null
+            : new Int32Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
+    private static System.Windows.Point EstimateHeadCenter(Int32Rect? bounds)
+    {
+        if (bounds is null)
+        {
+            return new System.Windows.Point(BaseSize / 2, BaseSize * 0.32);
+        }
+
+        var rect = bounds.Value;
+        return new System.Windows.Point(
+            rect.X + rect.Width * 0.52,
+            rect.Y + rect.Height * 0.28);
+    }
+
+    private void ApplyUploadedWarp(double pullX, double pullY, double angleDegrees)
+    {
+        if (_uploadedBaseBitmap is null || _uploadedBasePixels is null)
+        {
+            return;
+        }
+
+        if (Math.Abs(pullX) < 0.2 && Math.Abs(pullY) < 0.2 && Math.Abs(angleDegrees) < 0.2)
+        {
+            PetImage.Source = _uploadedBaseBitmap;
+            return;
+        }
+
+        const int size = (int)BaseSize;
+        const int stride = size * 4;
+        var output = new byte[_uploadedBasePixels.Length];
+        var bounds = _uploadedForegroundBounds ?? new Int32Rect(0, 0, size, size);
+        var top = bounds.Y;
+        var bottom = Math.Max(bounds.Y + bounds.Height, top + 1);
+        var theta = angleDegrees * Math.PI / 180.0;
+        var sigma = Math.Max(36.0, bounds.Width * 0.55);
+
+        for (var y = 0; y < size; y++)
+        {
+            var vertical = 1.0 - Math.Clamp((y - top) / (double)(bottom - top), 0, 1);
+            vertical = Math.Pow(vertical, 1.75);
+
+            for (var x = 0; x < size; x++)
+            {
+                var dx = x - _uploadedHeadCenter.X;
+                var dy = y - _uploadedHeadCenter.Y;
+                var radial = Math.Exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
+                var weight = Math.Clamp(vertical * (0.30 + 0.70 * radial), 0, 1);
+
+                var rotX = -dy * theta * 0.50 * weight;
+                var rotY = dx * theta * 0.32 * weight;
+                var sourceX = x - pullX * weight - rotX;
+                var sourceY = y - pullY * weight - rotY;
+                SampleBgra(_uploadedBasePixels, output, size, size, stride, x, y, sourceX, sourceY);
+            }
+        }
+
+        var warped = BitmapSource.Create(size, size, 96, 96, PixelFormats.Bgra32, null, output, stride);
+        warped.Freeze();
+        PetImage.Source = warped;
+    }
+
+    private static void SampleBgra(byte[] source, byte[] output, int width, int height, int stride, int targetX, int targetY, double sourceX, double sourceY)
+    {
+        var outputIndex = targetY * stride + targetX * 4;
+        if (sourceX < 0 || sourceY < 0 || sourceX >= width - 1 || sourceY >= height - 1)
+        {
+            output[outputIndex + 3] = 0;
+            return;
+        }
+
+        var x0 = (int)Math.Floor(sourceX);
+        var y0 = (int)Math.Floor(sourceY);
+        var fx = sourceX - x0;
+        var fy = sourceY - y0;
+
+        var i00 = y0 * stride + x0 * 4;
+        var i10 = y0 * stride + (x0 + 1) * 4;
+        var i01 = (y0 + 1) * stride + x0 * 4;
+        var i11 = (y0 + 1) * stride + (x0 + 1) * 4;
+
+        for (var c = 0; c < 4; c++)
+        {
+            var top = source[i00 + c] * (1 - fx) + source[i10 + c] * fx;
+            var bottom = source[i01 + c] * (1 - fx) + source[i11 + c] * fx;
+            output[outputIndex + c] = (byte)Math.Clamp((int)Math.Round(top * (1 - fy) + bottom * fy), 0, 255);
+        }
     }
 
     private void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

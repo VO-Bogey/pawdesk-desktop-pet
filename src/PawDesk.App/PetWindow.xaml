@@ -56,9 +56,12 @@
                     <TranslateTransform x:Name="BounceTranslate" X="0" Y="0"/>
                 </TransformGroup>
             </Viewbox.RenderTransform>
+
             <Grid Width="220" Height="220">
                 <Image x:Name="PetImage"
-                       Stretch="Uniform"
+                       Width="220"
+                       Height="220"
+                       Stretch="None"
                        Visibility="Collapsed"/>
 
                 <Canvas x:Name="DefaultPet" Width="220" Height="220">
