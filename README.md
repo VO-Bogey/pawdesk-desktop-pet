@@ -51,6 +51,12 @@ From this directory:
 ..\.dotnet\dotnet.exe run --project src\PawDesk.App\PawDesk.App.csproj
 ```
 
+For quick local testing, run the published executable directly instead of downloading it again:
+
+```powershell
+src\PawDesk.App\bin\Release\net8.0-windows\win-x64\publish\PawDesk.App.exe
+```
+
 The app stores user data in:
 
 ```text
@@ -62,6 +68,14 @@ The app stores user data in:
 ```powershell
 ..\.dotnet\dotnet.exe publish src\PawDesk.App\PawDesk.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:EnableCompressionInSingleFile=true
 ```
+
+## Versioning
+
+This repository uses simple Git tags for releases:
+
+- `v0.1.x` for personal test builds
+- Create a new tag and GitHub Release for each shared exe
+- Do not overwrite old release assets except for a mistaken upload
 
 The output is written under:
 
