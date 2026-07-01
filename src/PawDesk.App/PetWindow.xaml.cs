@@ -138,9 +138,6 @@ public partial class PetWindow : Window
         HeadRotate.Angle = 0;
         HeadTranslate.X = 0;
         HeadTranslate.Y = 0;
-        UploadedHeadRotate.Angle = 0;
-        UploadedHeadTranslate.X = 0;
-        UploadedHeadTranslate.Y = 0;
         BounceTranslate.Y = 0;
     }
 
@@ -208,27 +205,10 @@ public partial class PetWindow : Window
         AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.YProperty, headY, duration);
         AnimateTo(HeadRotate, System.Windows.Media.RotateTransform.AngleProperty, headAngle, duration);
 
-        var imageIsVisible = UploadedPet.Visibility == Visibility.Visible;
-        if (imageIsVisible)
-        {
-            AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
-            AnimateTo(HeadTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
-            AnimateTo(HeadRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
-            AnimateTo(UploadedHeadTranslate, System.Windows.Media.TranslateTransform.XProperty, headX, duration);
-            AnimateTo(UploadedHeadTranslate, System.Windows.Media.TranslateTransform.YProperty, headY * 0.7, duration);
-            AnimateTo(UploadedHeadRotate, System.Windows.Media.RotateTransform.AngleProperty, headAngle, duration);
-            AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
-            AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
-            AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
-            return;
-        }
-
-        AnimateTo(UploadedHeadTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
-        AnimateTo(UploadedHeadTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
-        AnimateTo(UploadedHeadRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
-        AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, 0, duration);
-        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, 0, duration);
-        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, 0, duration);
+        var imageIsVisible = PetImage.Visibility == Visibility.Visible;
+        AnimateTo(LeanRotate, System.Windows.Media.RotateTransform.AngleProperty, imageIsVisible ? bodyAngle : 0, duration);
+        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.XProperty, imageIsVisible ? headX * 0.35 : 0, duration);
+        AnimateTo(ReactionTranslate, System.Windows.Media.TranslateTransform.YProperty, imageIsVisible ? headY * 0.25 : 0, duration);
     }
 
     private static void AnimateTo(System.Windows.Media.Animation.Animatable target, DependencyProperty property, double value, TimeSpan duration)
@@ -284,9 +264,8 @@ public partial class PetWindow : Window
         if (string.IsNullOrWhiteSpace(_settings.CurrentPetImagePath) ||
             !File.Exists(_settings.CurrentPetImagePath))
         {
-            PetBodyImage.Source = null;
-            PetHeadImage.Source = null;
-            UploadedPet.Visibility = Visibility.Collapsed;
+            PetImage.Source = null;
+            PetImage.Visibility = Visibility.Collapsed;
             DefaultPet.Visibility = Visibility.Visible;
             return;
         }
@@ -298,9 +277,8 @@ public partial class PetWindow : Window
         image.EndInit();
         image.Freeze();
 
-        PetBodyImage.Source = image;
-        PetHeadImage.Source = image;
-        UploadedPet.Visibility = Visibility.Visible;
+        PetImage.Source = image;
+        PetImage.Visibility = Visibility.Visible;
         DefaultPet.Visibility = Visibility.Collapsed;
     }
 
@@ -374,7 +352,7 @@ public partial class PetWindow : Window
         _settings.LastOpenDirectory = Path.GetDirectoryName(dialog.FileName) ?? string.Empty;
         IsEnabled = false;
         Cursor = System.Windows.Input.Cursors.Wait;
-        UploadedPet.ToolTip = "正在生成宠物...";
+        PetImage.ToolTip = "正在生成宠物...";
         DefaultPet.ToolTip = "正在生成宠物...";
 
         try
@@ -395,7 +373,7 @@ public partial class PetWindow : Window
         {
             IsEnabled = true;
             Cursor = System.Windows.Input.Cursors.Hand;
-            UploadedPet.ToolTip = null;
+            PetImage.ToolTip = null;
             DefaultPet.ToolTip = null;
         }
     }
